@@ -13,7 +13,7 @@
 #      http://www.gnu.org/licenses/gpl-3.0.html
 #
 #  website: https://github.com/cokelaer/bioservices
-#  documentation: http://packages.python.org/bioservices
+#  documentation: https://bioservices.readthedocs.io/en/master/index.html
 #
 ##############################################################################
 #$Id$
