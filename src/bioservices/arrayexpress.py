@@ -51,7 +51,7 @@ class ArrayExpress(REST):
         s = ArrayExpress()
         s.getAE('E-MEXP-31')
 
-    You can also quickyl retrieve experiments matching some search queries as
+    You can also quickly retrieve experiments matching some search queries as
     follows::
 
         a.queryAE(keywords="pneumonia", species='homo+sapiens')
@@ -115,7 +115,7 @@ class ArrayExpress(REST):
          'E-MEXP-31.idf.txt',
          'E-MEXP-31.sdrf.txt']
 
-    Nnew in version 1.3.7 you can use the method :meth:`getEA`
+    New in version 1.3.7 you can use the method :meth:`getEA`
 
     Then, you may want to download a particular file::
 
