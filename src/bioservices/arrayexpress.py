@@ -35,6 +35,7 @@ from __future__ import print_function
 
 from bioservices.services import REST
 from bioservices import logger
+import re
 logger.name = __name__
 
 
@@ -149,6 +150,39 @@ class ArrayExpress(REST):
         self.easyXMLConversion = True
         self._format = "xml"
         self.version = "v2"
+        self.AE_params = {
+            # settings
+            "wholewords": "on",
+            "expandfo": "on",  # see https://www.ebi.ac.uk/efo/
+            # search terms
+            "keywords": None,
+            "accession": None,  # ex: E-MEXP-31
+            "array": None,  # ex: A-AFFY-33
+            "expdesign": None,
+            "exptype": None,
+            "ef": None,  # ex: CellType
+            "efv": None,  # ex: HeLa
+            "sa": None,  # ex: fibroblast
+            "sac": None,  # ex: strain
+            "species": None,
+            "pmid": None,
+            # filters
+            "gxa": "true",
+            "directsub": "true",
+            "raw": "true",
+            "processed": "true",
+            # other criteria
+            "assaycount": None,  # [x TO y] where x and y are integers
+            "samplecount": None,  # [x TO y] where x and y are integers
+            "efcount": None,  # [x TO y] where x and y are integers
+            "sacount": None,  # [x TO y] where x and y are integers
+            "miamescore": None,  # [x TO y] where x and y are integers
+            "minseqe": None,  # [x TO y] where x and y are integers and y=<5
+            "date": None,  # ex: YYYY*, [YYYY-MM-DD YYYY-MM-DD]
+            # sorting
+            "sortby": ["accession", "name", "assays", "species", "releasedate", "fgem", "raw", "atlas"],
+            "sortorder": ["ascending", "descending"]
+        }
 
     # 'set' function for the property 'format'
     def _set_format(self, f):
@@ -168,64 +202,68 @@ class ArrayExpress(REST):
 
     format = property(_get_format, _set_format, doc="Read/Write access to specify the output format (json or xml)")
 
+    def validate_parameters(self, param_name, param_value):
+        """
+        :param param_name:
+        :param param_value:
+        :return: valid value
+        """
+        if param_name in ["expandfo", "wholewords"]:
+            if param_value is True or param_value.upper() in ["ON", "TRUE"]:
+                value = "on"
+            elif param_value is False or param_value.upper() in ["OFF", "FALSE"]:
+                value = "off"
+            else:
+                raise ValueError("{} must be on or off".format(param_name))
+        elif param_name in ["gxa", "directsub"]:
+            # default is "true", so no need to set to "true"
+            if param_value is True or param_value.upper() == "TRUE":
+                value = "true"
+            elif param_value is False or param_value.upper() == "FALSE":
+                value = "false"
+            else:
+                raise ValueError("{} must be true or false".format(param_name))
+        elif param_name in ["sortby", "sortorder"]:
+            self.devtools.check_param_in_list(param_value.lower(), self.AE_params[param_name])
+            value = param_value.lower()
+        elif param_name in ["assaycount", "samplecount", "efcount", "sacount", "miamescore", "minseqe"]:
+            param_value = param_value.upper()
+            if re.search(r"\d+\s*(TO|-)\s*\d+", param_value):
+                match = re.search(r"(\d+)\s*(TO|-)\s*(\d+)", param_value)
+                numbers = [match.group(1), match.group(3)]
+                numbers.sort()
+                value = "[" + str(numbers[0]) + " TO " + str(numbers[1]) + "]"
+                print(value)
+            else:
+                raise ValueError("{} must be a numeric range in the format x TO y".format(param_name))
+        return value
+
     def _search(self, mode, **kargs):
         """
         :param mode: str, search mode ("experiments" or "files")
         :param kargs: ArrayExpress parameters and appropriate values
         :return: ArrayExpress results object
+        common function to search for files or experiments
+        see https://www.ebi.ac.uk/arrayexpress/help/programmatic_access.html for params and accepted values
         """
-        """common function to search for files or experiments"""
         assert mode in ["experiments", "files"]
         url = "{0}/{1}/{2}".format(self.format, self.version, mode)
-
-
-        defaults = {
-            "accession":None, # ex: E-MEXP-31
-            "keywords":None,
-            "species": None,
-            "wholewords": "on",
-            "expdesign":  None,
-            "exptype": None,
-            "gxa": "true",
-            "pmid": None,
-            "sa": None,
-            "ef": None,         # e.g., CellType
-            "efv": None,         # e.g., HeLa
-            "array":None,       # ex: A-AFFY-33
-            "expandfo": "on",
-            "directsub": "true",
-            "sortby": ["accession", "name", "assays", "species", "releasedate", "fgem", "raw", "atlas"],
-            "sortorder": ["ascending", "descending"],
-        }
-
-        for k in kargs.keys():
-            self.devtools.check_param_in_list(k, list(defaults.keys()))
-
         params = {}
 
-        for k, v in kargs.items():
-            if k in ["expandfo", "wholewords"]:
-                if v in ["on", True, "true", "TRUE", "True"]:
-                    params[k] = "on"
-            elif k in ["gxa", "directsub"]:
-                if v in ["on", True, "true", "TRUE", "True"]:
-                    params[k] = "true"
-                elif v in [False, "false", "False"]:
-                    params[k] = "false"
-                else:
-                    raise ValueError("directsub must be true or false")
-            else:
-                if k in ["sortby", "sortorder"]:
-                    self.devtools.check_param_in_list(v, defaults[k])
-                #params.append(k + "=" + v)
-                params[k] = v
+        for k in kargs.keys():
+            self.devtools.check_param_in_list(k, list(self.AE_params.keys()))
 
-        # NOTE: + is a special character that is replaced by %2B
-        # The + character is the proper encoding for a space when quoting
-        # GET or POST data. Thus, a literal + character needs to be escaped
-        # as well, lest it be decoded to a space on the other end
-        for k, v in params.items():
-            params[k] = v.replace("+",  " ")
+        for k, v in kargs.items():
+            v = self.validate_parameters(k, v)
+            # NOTE: + is a special character that is replaced by %2B
+            # The + character is the proper encoding for a space when quoting
+            # GET or POST data. Thus, a literal + character needs to be escaped
+            # as well, lest it be decoded to a space on the other end
+            params[k] = v.replace("+", " ")
+
+        # now does this above, to prevent additional iteration through the dict
+        # for k, v in params.items():
+        #     params[k] = v.replace("+",  " ")
 
         self.logging.info(url)
         res = self.http_get(url, frmt=self.format, params=params)
