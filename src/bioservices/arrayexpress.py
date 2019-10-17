@@ -138,34 +138,49 @@ class ArrayExpress(REST):
     """
     def __init__(self, verbose=False, cache=False):
         """.. rubric:: Constructor
-
-        :param bool verbose: prints informative messages
-
+        :param verbose: bool, prints informative messages
+        :param cache: bool, stores requests in a local database
         """
         super(ArrayExpress, self).__init__(name="ArrayExpress",
-            url="http://www.ebi.ac.uk/arrayexpress", cache=cache,
-            verbose=verbose)
+                                           url="http://www.ebi.ac.uk/arrayexpress",
+                                           cache=cache,
+                                           verbose=verbose)
 
         self.easyXMLConversion = True
         self._format = "xml"
         self.version = "v2"
 
+    # 'set' function for the property 'format'
     def _set_format(self, f):
+        """
+        :param f: str, accepted file format (xml or json)
+        :return: sets the variable '_format' to the value of f
+        """
         self.devtools.check_param_in_list(f, ["json", "xml"])
         self._format = f
+
+    # 'get' function for the property 'format'
     def _get_format(self):
+        """
+        :return: format (xml or json)
+        """
         return self._format
-    format = property(_get_format, _set_format,
-        doc="Read/Write access to specify the output format (json or xml)")
+
+    format = property(_get_format, _set_format, doc="Read/Write access to specify the output format (json or xml)")
 
     def _search(self, mode, **kargs):
+        """
+        :param mode: str, search mode ("experiments" or "files")
+        :param kargs: ArrayExpress parameters and appropriate values
+        :return: ArrayExpress results object
+        """
         """common function to search for files or experiments"""
         assert mode in ["experiments", "files"]
         url = "{0}/{1}/{2}".format(self.format, self.version, mode)
 
 
         defaults = {
-            "accession":None, #ex: E-MEXP-31
+            "accession":None, # ex: E-MEXP-31
             "keywords":None,
             "species": None,
             "wholewords": "on",
@@ -186,21 +201,16 @@ class ArrayExpress(REST):
         for k in kargs.keys():
             self.devtools.check_param_in_list(k, list(defaults.keys()))
 
-        #if len(kargs.keys()):
-        #    url += "?"
         params = {}
 
         for k, v in kargs.items():
             if k in ["expandfo", "wholewords"]:
                 if v in ["on", True, "true", "TRUE", "True"]:
-                    #params.append(k + "=on")
                     params[k] = "on"
             elif k in ["gxa", "directsub"]:
                 if v in ["on", True, "true", "TRUE", "True"]:
-                    #params.append(k + "=true")
                     params[k] = "true"
                 elif v in [False, "false", "False"]:
-                    #params.append(k + "=false")
                     params[k] = "false"
                 else:
                     raise ValueError("directsub must be true or false")
@@ -214,7 +224,7 @@ class ArrayExpress(REST):
         # The + character is the proper encoding for a space when quoting
         # GET or POST data. Thus, a literal + character needs to be escaped
         # as well, lest it be decoded to a space on the other end
-        for k,v in params.items():
+        for k, v in params.items():
             params[k] = v.replace("+",  " ")
 
         self.logging.info(url)
