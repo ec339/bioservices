@@ -149,7 +149,7 @@ class ArrayExpress(REST):
 
         self.easyXMLConversion = True
         self._format = "xml"
-        self.version = "v2"
+        self.version = "v3"  # now using v3: https://www.ebi.ac.uk/arrayexpress/help/programmatic_access.html
         self.experiment_params = {
             # search terms
             "keywords": None,
