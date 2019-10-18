@@ -202,11 +202,77 @@ class ArrayExpress(REST):
 
     format = property(_get_format, _set_format, doc="Read/Write access to specify the output format (json or xml)")
 
-    def validate_parameters(self, param_name, param_value):
+    def validate_and_format_numeric_range_values(self, param_name, param_value):
         """
-        :param param_name:
-        :param param_value:
-        :return: valid value
+        :param param_name: str, "assaycount", "samplecount", "efcount", "sacount", "miamescore", "minseqe"
+        :param param_value: str, a numeric range
+        :return: str, formatted numeric range for use in query
+        """
+        if param_name in ["assaycount", "samplecount", "efcount", "sacount", "miamescore", "minseqe"]:
+            param_value = param_value.upper()
+            if re.search(r"\d+\s*(TO|-)\s*\d+", param_value):
+                match = re.search(r"(\d+)\s*(TO|-)\s*(\d+)", param_value)
+                numbers = [match.group(1), match.group(3)]
+                numbers.sort()
+                if param_name in ["minseqe", "miamescore"]:
+                    if numbers[1] > 5:
+                        raise ValueError("{} must be a valid score range (max score is 5)".format(param_name))
+                value = "[" + str(numbers[0]) + " TO " + str(numbers[1]) + "]"
+                self.logging.info("{} range set to {}".format(param_name, value))
+            else:
+                raise ValueError("{} must be a numeric range in the format x TO y".format(param_name))
+        else:
+            raise ValueError("Unexpected parameter {}: this parameter should not be validated this way".format(
+                param_name))
+        return value
+
+    def validate_and_format_date_values(self, param_name, param_value):
+        """
+        :param param_name: str, "date"
+        :param param_value: str, date or date range
+        :return: str, formatted date/date range for use in query
+        """
+        if param_name == "date":
+            if re.search(r"\d{4}\-\d{2}-\d{2}", param_value):
+                dates = re.findall(r"\d{4}\-\d{2}-\d{2}", param_value)
+                if re.search(r"\d{4}(?!\-)", param_value):
+                    years = re.findall(r"\d{4}(?!\-)", param_value)
+                    years.sort()
+                    dates.sort()
+                    if years[0] < dates[0]:
+                        dates.append(years[0] + "-01-01")
+                    if years[-1] > dates[-1]:
+                        dates.append(years[-1] + "-12-31")
+                dates.sort()
+                value = "[" + dates[0] + " " + dates[-1] + "]"
+                if len(dates) > 2:
+                    self.logging.warning("More than two dates supplied: {}. "
+                                         "Using widest range in query {}".format(", ".join(dates), value))
+            elif re.search(r"\d{4}(?!\-)", param_value):
+                years = re.findall(r"\d{4}(?!-)", param_value)
+                if len(years) == 1:
+                    self.logging.info("Only found year ({}) in supplied date value".format(years[0]))
+                    value = years[0] + "*"
+                else:
+                    years.sort()
+                    earliest = years[0]
+                    latest = years[-1]
+                    value = "[" + earliest + "-01-01 " + latest + "-12-31]"
+                    self.logging.warning("Only found years in supplied date value. "
+                                         "Using widest range in query ({})".format(value))
+            else:
+                raise ValueError("Date must be either a 'YYYY-MM-DD' format date, a 'YYYY-MM-DD YYYY-MM-DD' format date"
+                                 " range, a 'YYYY' format date, or a 'YYYY YYYY' format date range")
+        else:
+            raise ValueError("Unexpected parameter {}: this parameter should not be validated this way".format(
+                param_name))
+        return value
+
+    def validate_and_format_boolean_values(self, param_name, param_value):
+        """
+        :param param_name: str, "expandfo", "wholewords", "gxa", "directsub", "raw", "processed"
+        :param param_value: str, variants of true, false, on, off
+        :return: str, appropriate formatted value for use in query
         """
         if param_name in ["expandfo", "wholewords"]:
             if param_value is True or param_value.upper() in ["ON", "TRUE"]:
@@ -215,27 +281,17 @@ class ArrayExpress(REST):
                 value = "off"
             else:
                 raise ValueError("{} must be on or off".format(param_name))
-        elif param_name in ["gxa", "directsub"]:
-            # default is "true", so no need to set to "true"
+        elif param_name in ["gxa", "directsub", "raw", "processed"]:
             if param_value is True or param_value.upper() == "TRUE":
                 value = "true"
             elif param_value is False or param_value.upper() == "FALSE":
                 value = "false"
             else:
                 raise ValueError("{} must be true or false".format(param_name))
-        elif param_name in ["sortby", "sortorder"]:
-            self.devtools.check_param_in_list(param_value.lower(), self.AE_params[param_name])
-            value = param_value.lower()
-        elif param_name in ["assaycount", "samplecount", "efcount", "sacount", "miamescore", "minseqe"]:
-            param_value = param_value.upper()
-            if re.search(r"\d+\s*(TO|-)\s*\d+", param_value):
-                match = re.search(r"(\d+)\s*(TO|-)\s*(\d+)", param_value)
-                numbers = [match.group(1), match.group(3)]
-                numbers.sort()
-                value = "[" + str(numbers[0]) + " TO " + str(numbers[1]) + "]"
-                print(value)
-            else:
-                raise ValueError("{} must be a numeric range in the format x TO y".format(param_name))
+        else:
+            raise ValueError("Unexpected parameter {}: this parameter should not be validated this way".format(
+                param_name))
+        self.logging.info("{} set to {}".format(param_name, value))
         return value
 
     def _search(self, mode, **kargs):
@@ -254,16 +310,22 @@ class ArrayExpress(REST):
             self.devtools.check_param_in_list(k, list(self.AE_params.keys()))
 
         for k, v in kargs.items():
-            v = self.validate_parameters(k, v)
+            if k in ["sortby", "sortorder"]:
+                self.devtools.check_param_in_list(v.lower(), self.AE_params[k])
+                value = v.lower()
+            elif k in ["expandfo", "wholewords", "gxa", "directsub", "raw", "processed"]:
+                value = self.validate_and_format_boolean_values(k, v)
+            elif k == "date":
+                value = self.validate_and_format_date_values(k, v)
+            elif k in ["assaycount", "samplecount", "efcount", "sacount", "miamescore", "minseqe"]:
+                value = self.validate_and_format_numeric_range_values(k, v)
+            else:
+                value = v
             # NOTE: + is a special character that is replaced by %2B
             # The + character is the proper encoding for a space when quoting
             # GET or POST data. Thus, a literal + character needs to be escaped
             # as well, lest it be decoded to a space on the other end
-            params[k] = v.replace("+", " ")
-
-        # now does this above, to prevent additional iteration through the dict
-        # for k, v in params.items():
-        #     params[k] = v.replace("+",  " ")
+            params[k] = value.replace("+", " ")
 
         self.logging.info(url)
         res = self.http_get(url, frmt=self.format, params=params)
