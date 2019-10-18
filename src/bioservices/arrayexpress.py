@@ -150,10 +150,7 @@ class ArrayExpress(REST):
         self.easyXMLConversion = True
         self._format = "xml"
         self.version = "v2"
-        self.AE_params = {
-            # settings
-            "wholewords": "on",
-            "expandfo": "on",  # see https://www.ebi.ac.uk/efo/
+        self.experiment_params = {
             # search terms
             "keywords": None,
             "accession": None,  # ex: E-MEXP-31
@@ -179,7 +176,19 @@ class ArrayExpress(REST):
             "miamescore": None,  # [x TO y] where x and y are integers
             "minseqe": None,  # [x TO y] where x and y are integers and y=<5
             "date": None,  # ex: YYYY*, [YYYY-MM-DD YYYY-MM-DD]
-            # sorting
+        }
+        self.file_params = {
+            "keywords": None,
+            "accession": None,  # ex: E-MEXP-31
+            "name": None,  # the file name
+            "kind": ["processed", "raw", "cel", "adf", "idf", "sdrf", "r-object"],
+            "extension": None  # ex: txt, zip
+        }
+        self.setting_and_sorting_params = {
+            # settings
+            "wholewords": "on",
+            "expandfo": "on",  # see https://www.ebi.ac.uk/efo/
+            # sorting options
             "sortby": ["accession", "name", "assays", "species", "releasedate", "fgem", "raw", "atlas"],
             "sortorder": ["ascending", "descending"]
         }
@@ -249,7 +258,10 @@ class ArrayExpress(REST):
                     self.logging.warning("More than two dates supplied: {}. "
                                          "Using widest range in query {}".format(", ".join(dates), value))
             elif re.search(r"\d{4}(?!\-)", param_value):
-                years = re.findall(r"\d{4}(?!-)", param_value)
+                if re.match(r"\d{4}\-\d{4}", param_value):
+                    years = param_value.split("-")
+                else:
+                    years = re.findall(r"\d{4}(?!-)", param_value)
                 if len(years) == 1:
                     self.logging.info("Only found year ({}) in supplied date value".format(years[0]))
                     value = years[0] + "*"
@@ -296,22 +308,34 @@ class ArrayExpress(REST):
 
     def _search(self, mode, **kargs):
         """
+        common function to search for files or experiments
+        see https://www.ebi.ac.uk/arrayexpress/help/programmatic_access.html for params and accepted values
         :param mode: str, search mode ("experiments" or "files")
         :param kargs: ArrayExpress parameters and appropriate values
         :return: ArrayExpress results object
-        common function to search for files or experiments
-        see https://www.ebi.ac.uk/arrayexpress/help/programmatic_access.html for params and accepted values
         """
         assert mode in ["experiments", "files"]
         url = "{0}/{1}/{2}".format(self.format, self.version, mode)
+        exp_param_names = list(self.experiment_params.keys()) + list(self.setting_and_sorting_params.keys())
+        file_param_names = list(self.file_params.keys()) + list(self.setting_and_sorting_params.keys())
         params = {}
 
-        for k in kargs.keys():
-            self.devtools.check_param_in_list(k, list(self.AE_params.keys()))
+        if mode == "experiments":
+            total_attribute = "total"
+            for k in kargs.keys():
+                self.devtools.check_param_in_list(k, exp_param_names)
+
+        if mode == "files":
+            total_attribute = "total-experiments"
+            for k in kargs.keys():
+                self.devtools.check_param_in_list(k, file_param_names)
 
         for k, v in kargs.items():
             if k in ["sortby", "sortorder"]:
-                self.devtools.check_param_in_list(v.lower(), self.AE_params[k])
+                self.devtools.check_param_in_list(v.lower(), self.experiment_params[k])
+                value = v.lower()
+            elif k == "kind":
+                self.devtools.check_param_in_list(v.lower(), self.file_params[k])
                 value = v.lower()
             elif k in ["expandfo", "wholewords", "gxa", "directsub", "raw", "processed"]:
                 value = self.validate_and_format_boolean_values(k, v)
@@ -327,10 +351,21 @@ class ArrayExpress(REST):
             # as well, lest it be decoded to a space on the other end
             params[k] = value.replace("+", " ")
 
-        self.logging.info(url)
+        self.logging.info("URL is {}".format(url))
+        self.logging.info("Parameters are {}".format(params))
+        self.logging.info("Querying ArrayExpress...")
         res = self.http_get(url, frmt=self.format, params=params)
+        self.logging.info("Done")
         if self.format == "xml":
             res = self.easyXML(res)
+            exp = res.soup.find(mode)
+            total = int(exp.get(total_attribute))
+        else:
+            total = int(res[mode][total_attribute])
+        if total == 0:
+            self.logging.warning("No results found when querying for {}".format(params))
+        else:
+            self.logging.info("Found {} experiments".format(str(total)))
         return res
 
     def queryFiles(self, **kargs):
@@ -351,7 +386,7 @@ class ArrayExpress(REST):
         :param str keywords: e.g. "cancer+breast"
         :param str pmid: PubMed identifier (e.g., 16553887)
         :param str sa: Sample attribute values. Has EFO expansion. fibroblast
-        :param str species: Species of the samples.Has EFO expansion. (e.g., "homo+sapiens")
+        :param str species: Species of the samples. Has EFO expansion. (e.g., "homo+sapiens")
         :param bool wholewords:
 
         The following parameters can filter the experiments:
@@ -489,12 +524,12 @@ class ArrayExpress(REST):
         """
         frmt = self.format
         self.format = 'json'
-        try:
-            sets = self.queryExperiments(**kargs)
-        except:
-            pass
+        sets = self.queryExperiments(**kargs)
         self.format = frmt
-        return [x['accession'] for x in sets['experiments']['experiment']]
+        if int(sets['experiments']['total']) == 0:
+            return "No results found for query (see log for more information)"
+        else:
+            return [x['accession'] for x in sets['experiments']['experiment']]
 
     def getAE(self, accession, type='full'):
         """retrieve all files from an experiments and save them locally"""
