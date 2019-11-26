@@ -188,7 +188,6 @@ class Service(object):
         from bioservices import xmltools
         return xmltools.easyXML(res)
 
-
     def __str__(self):
         txt = "This is an instance of %s service" % self.name
         return txt

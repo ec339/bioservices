@@ -42,6 +42,7 @@ logger.name = __name__
 __all__ = ["ArrayExpress"]
 
 
+# noinspection PyPep8Naming
 class ArrayExpress(REST):
     """Interface to the `ArrayExpress <http://www.ebi.ac.uk/arrayexpress>`_ service
 
@@ -139,8 +140,8 @@ class ArrayExpress(REST):
     """
     def __init__(self, verbose=False, cache=False):
         """.. rubric:: Constructor
-        :param verbose: bool, prints informative messages
-        :param cache: bool, stores requests in a local database
+        :param bool verbose: prints informative messages
+        :param bool cache: stores requests in a local database
         """
         super(ArrayExpress, self).__init__(name="ArrayExpress",
                                            url="http://www.ebi.ac.uk/arrayexpress",
@@ -450,14 +451,17 @@ class ArrayExpress(REST):
         return res
 
     def retrieveFile(self, experiment, filename, save=False):
-        """Retrieve a specific file from an experiment
-
-        :param str filename:
-
+        """
+        Retrieve a specific file from an experiment
+        :param experiment: str, experiment ID
+        :param filename: str, file name
+        :param save: bool, whether to save the file locally
+        :return: result object
         ::
 
             >>> s.retrieveFile("E-MEXP-31", "E-MEXP-31.idf.txt")
         """
+        # temporarily set format as xml for retrieving files
         frmt = self.format[:]
         self.format = "xml"
         files = self.retrieveFilesFromExperiment(experiment)
@@ -466,16 +470,16 @@ class ArrayExpress(REST):
         assert filename in files, """Error. Provided filename does not seem to be correct.
             Files available for %s experiment are %s """ % (experiment, files)
 
-        url =  "files/" + experiment + "/" + filename
+        url = "files/" + experiment + "/" + filename
 
         if save:
             res = self.http_get(url, frmt="txt")
-            f = open(filename,"w")
+            f = open(filename, "w")
             f.write(res)
             f.close()
         else:
             res = self.http_get(url, frmt=None)
-            return  res
+            return res
 
     def retrieveFilesFromExperiment(self, experiment):
         """Given an experiment, returns the list of files found in its description
@@ -495,20 +499,24 @@ class ArrayExpress(REST):
         .. warning:: if format is json, filenames cannot be found so you
             must use format set to xml
         """
+        files = []
         if self.format != "xml":
             frmt = 'xml'
         try:
-            res = self.queryExperiments(keywords=experiment)
-            exp = res.getchildren()[0]
-            files = [x.getchildren() for x in exp.getchildren() if x.tag == "files"]
-            output = [x.get("name") for x in files[0]]
+            res = self.queryFiles(accession=experiment)
+            exps = res.getchildren()
+            for expt in exps:
+                for exp in expt:
+                    for child in exp.getchildren():
+                        if child.tag == "location":
+                            files.append(child.text)
             if self.format != 'xml':
                 self.format = frmt
         except Exception as err:
             if self.format != 'xml':
                 self.format = frmt
             raise Exception(err)
-        return output
+        return files
 
     def queryAE(self, **kargs):
         """Returns list of experiments
@@ -532,10 +540,10 @@ class ArrayExpress(REST):
             return [x['accession'] for x in sets['experiments']['experiment']]
 
     def getAE(self, accession, type='full'):
-        """retrieve all files from an experiments and save them locally"""
+        """retrieve all files from an experiment and save them locally"""
         filenames = self.retrieveFilesFromExperiment(accession)
         self.info("Found %s files" % len(filenames))
-        for i,filename in enumerate(filenames):
+        for i, filename in enumerate(filenames):
             res = self.retrieveFile(accession, filename)
             fh = open(filename, 'w')
             self.info("Downloading %s" % filename)
